@@ -1,0 +1,207 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Address;
+use App\Models\OldJewelleryRequest;
+use App\Models\Order;
+use App\Models\ReferralUsage;
+use Barryvdh\DomPDF\Facade\Pdf;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\Rule;
+
+class AccountController extends Controller
+{
+    public function index()
+    {
+        $user = Auth::user();
+
+        $orders = $user->orders()->with('items')->paginate(10);
+
+        // One grouped query rather than a count per tile — the overview shows
+        // four status tiles and every status not returned is simply zero.
+        $statusCounts = $user->orders()
+            ->selectRaw('status, count(*) as total')
+            ->groupBy('status')
+            ->pluck('total', 'status');
+
+        return view('account.index', [
+            'orders' => $orders,
+            'statusCounts' => $statusCounts,
+            'walletBalance' => $user->wallet_balance,
+            // Drives the "Sell Your Jewellery" row, which reports the state of
+            // the shopper's most recent request rather than always inviting a
+            // new one.
+            'sellJewellery' => $this->sellJewelleryRow(
+                $user->oldJewelleryRequests()->latest()->first()
+            ),
+            'referralCode' => $user->referral_code,
+            'referralCount' => $user->referrals()->count(),
+            'referralEarned' => (float) ReferralUsage::where('referrer_id', $user->id)->sum('referrer_credit'),
+        ]);
+    }
+
+    /**
+     * The "Sell Your Jewellery" account row has three states: no request yet
+     * (invite one, straight to the upload form), one still in flight (report
+     * it and link to it), or a credited payout (show the amount and send them
+     * shopping).
+     *
+     * @return array{label: string, note: string, url: string, badge: string}
+     */
+    private function sellJewelleryRow(?OldJewelleryRequest $request): array
+    {
+        if ($request === null) {
+            return [
+                'label' => 'Sell Your Jewellery',
+                'note' => 'Get an offer for old gold',
+                'url' => route('account.sell-jewellery.create'),
+                'badge' => 'Get an Offer',
+            ];
+        }
+
+        return [
+            'label' => 'View Your Requests',
+            'note' => 'Track the status of your old jewellery',
+            'url' => route('account.sell-jewellery.index'),
+            'badge' => 'View Requests',
+        ];
+    }
+
+    public function updateProfile(Request $request)
+    {
+        $user = Auth::user();
+
+        // Phone is deliberately not editable here: it's the identity the OTP
+        // login resolves an account by, so changing it without verifying the
+        // new number would lock the customer out of their own account. The
+        // form shows it read-only.
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'email' => ['nullable', 'email', 'max:255', Rule::unique('users', 'email')->ignore($user->id)],
+        ]);
+
+        $user->update($validated);
+
+        return redirect()->route('account.index')->with('success', 'Profile updated.');
+    }
+
+    public function orderShow(Order $order)
+    {
+        $this->authorizeOwnOrder($order);
+
+        $order->load('items');
+
+        return view('account.order-show', ['order' => $order]);
+    }
+
+    public function orderInvoice(Order $order)
+    {
+        $this->authorizeOwnOrder($order);
+
+        $order->load('items');
+
+        return response()->streamDownload(function () use ($order) {
+            echo Pdf::loadView('orders.invoice', ['order' => $order])->output();
+        }, "invoice-{$order->order_number}.pdf", ['Content-Type' => 'application/pdf']);
+    }
+
+    public function requestCancellation(Request $request, Order $order): RedirectResponse
+    {
+        $this->authorizeOwnOrder($order);
+
+        abort_unless($order->canRequestCancellation(), 422);
+
+        $validated = $request->validate([
+            'reason' => ['required', 'string', 'max:255'],
+        ]);
+
+        // Deliberately not touching `status` here — that's guarded by
+        // Order::ALLOWED_TRANSITIONS and only an admin action should move it.
+        // This just flags the order; see OrdersTable for how admins see/action it.
+        $order->update([
+            'cancellation_requested_at' => now(),
+            'cancellation_reason' => $validated['reason'],
+        ]);
+
+        return redirect()->route('account.orders.show', $order)
+            ->with('success', 'Your request has been sent — our team will review it shortly.');
+    }
+
+    public function addresses()
+    {
+        return view('account.addresses', ['addresses' => Auth::user()->addresses]);
+    }
+
+    public function addressStore(Request $request): RedirectResponse
+    {
+        $validated = $this->validateAddress($request);
+
+        $address = Auth::user()->addresses()->create($validated);
+
+        if ($address->is_default) {
+            $this->clearOtherDefaults($address);
+        }
+
+        if ($request->session()->pull('express_checkout_needs_address')) {
+            return redirect()->route('checkout.express')->with('success', 'Address saved — continuing to payment.');
+        }
+
+        return redirect()->route('account.addresses')->with('success', 'Address added.');
+    }
+
+    public function addressUpdate(Request $request, Address $address): RedirectResponse
+    {
+        $this->authorizeOwnAddress($address);
+
+        $validated = $this->validateAddress($request);
+        $address->update($validated);
+
+        if ($address->is_default) {
+            $this->clearOtherDefaults($address);
+        }
+
+        return redirect()->route('account.addresses')->with('success', 'Address updated.');
+    }
+
+    public function addressDestroy(Address $address): RedirectResponse
+    {
+        $this->authorizeOwnAddress($address);
+
+        $address->delete();
+
+        return redirect()->route('account.addresses')->with('success', 'Address removed.');
+    }
+
+    private function validateAddress(Request $request): array
+    {
+        return $request->validate([
+            'label' => ['required', 'string', 'max:50'],
+            'line1' => ['required', 'string', 'max:255'],
+            'line2' => ['nullable', 'string', 'max:255'],
+            'city' => ['required', 'string', 'max:100'],
+            'state' => ['required', 'string', 'max:100'],
+            'postal_code' => ['required', 'digits:6'],
+            'country' => ['required', 'string', 'max:100'],
+            'phone' => ['nullable', 'digits_between:10,15'],
+            'is_default' => ['sometimes', 'boolean'],
+        ]);
+    }
+
+    private function clearOtherDefaults(Address $keep): void
+    {
+        Auth::user()->addresses()->where('id', '!=', $keep->id)->update(['is_default' => false]);
+    }
+
+    private function authorizeOwnOrder(Order $order): void
+    {
+        abort_unless($order->user_id === Auth::id(), 404);
+    }
+
+    private function authorizeOwnAddress(Address $address): void
+    {
+        abort_unless($address->user_id === Auth::id(), 404);
+    }
+}

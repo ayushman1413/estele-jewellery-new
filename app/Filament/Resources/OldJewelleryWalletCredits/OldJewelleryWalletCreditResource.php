@@ -1,0 +1,53 @@
+<?php
+
+namespace App\Filament\Resources\OldJewelleryWalletCredits;
+
+use App\Filament\Concerns\HasNewRecordsBadge;
+use App\Filament\Resources\OldJewelleryWalletCredits\Pages\ListOldJewelleryWalletCredits;
+use App\Filament\Resources\OldJewelleryWalletCredits\Tables\OldJewelleryWalletCreditsTable;
+use App\Models\OldJewelleryWalletCredit;
+use BackedEnum;
+use Filament\Resources\Resource;
+use Filament\Support\Icons\Heroicon;
+use Filament\Tables\Table;
+
+class OldJewelleryWalletCreditResource extends Resource
+{
+    use HasNewRecordsBadge;
+
+    protected static ?string $model = OldJewelleryWalletCredit::class;
+
+    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedClock;
+
+    protected static ?string $navigationLabel = 'Credit';
+
+    protected static ?string $modelLabel = 'Old Jewellery Credit';
+
+    protected static ?string $pluralModelLabel = 'Old Jewellery Credits';
+
+    protected static string|\UnitEnum|null $navigationGroup = 'Sell Jewellery';
+
+    protected static ?int $navigationSort = 3;
+
+    public static function table(Table $table): Table
+    {
+        return OldJewelleryWalletCreditsTable::configure($table);
+    }
+
+    public static function getPages(): array
+    {
+        return [
+            'index' => ListOldJewelleryWalletCredits::route('/'),
+        ];
+    }
+
+    public static function canCreate(): bool
+    {
+        return false;
+    }
+
+    public static function canViewAny(): bool
+    {
+        return (bool) auth()->user()?->can('ViewAny:OldJewelleryWalletCredit');
+    }
+}

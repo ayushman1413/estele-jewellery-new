@@ -1,0 +1,61 @@
+<?php
+
+namespace App\Notifications;
+
+use App\Models\OldJewelleryVendorInvitation;
+use App\Notifications\Channels\WhatsAppChannel;
+use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Notifications\Messages\MailMessage;
+use Illuminate\Notifications\Notification;
+
+class VendorInvitedToBid extends Notification implements ShouldQueue
+{
+    use Queueable;
+
+    public function __construct(
+        public readonly OldJewelleryVendorInvitation $invitation,
+        public readonly string $plaintextToken,
+    ) {}
+
+    public function via(object $notifiable): array
+    {
+        $channels = ['mail'];
+
+        if (filled(($notifiable->whatsapp_number ?? null) ?: ($notifiable->mobile ?? null))) {
+            $channels[] = WhatsAppChannel::class;
+        }
+
+        return $channels;
+    }
+
+    public function toMail(object $notifiable): MailMessage
+    {
+        $request = $this->invitation->request;
+        $deadline = $request->bidding_end_at->setTimezone('Asia/Kolkata')->format('d M Y, h:i A');
+
+        return (new MailMessage)
+            ->subject("New old jewellery request {$request->request_number} — respond within 30 minutes")
+            ->greeting("Hello {$this->invitation->vendor->name},")
+            ->line("A customer has submitted an old jewellery item for valuation (request {$request->request_number}).")
+            ->line("You have until {$deadline} to respond.")
+            ->action('View request and respond', $this->responseUrl())
+            ->line('If you do not respond before the deadline, this request will be closed to you.');
+    }
+
+    public function toWhatsApp(object $notifiable): string
+    {
+        $request = $this->invitation->request;
+        $deadline = $request->bidding_end_at->setTimezone('Asia/Kolkata')->format('d M Y, h:i A');
+
+        return "New old jewellery request {$request->request_number}. Respond by {$deadline}: {$this->responseUrl()}";
+    }
+
+    private function responseUrl(): string
+    {
+        // The human bid page (old-jewellery.vendor.show), not the JSON API
+        // route of the same shape — a vendor clicking this link needs the
+        // form, not a raw API response.
+        return route('old-jewellery.vendor.show', ['token' => $this->plaintextToken]);
+    }
+}
