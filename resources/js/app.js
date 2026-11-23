@@ -931,23 +931,22 @@ import '../css/app.css';
     }
   })();
 
-  /* Initialise floating-cart visibility on page load using the server-rendered
-     count baked into [data-cart-count-badge] by Blade. */
+  /* Load cart state via AJAX so the initial page render never blocks on a
+     remote DB round-trip. The server renders empty-cart defaults; this
+     replaces them with the real cart once the fetch completes. */
   (function () {
-    var badge = document.querySelector('[data-cart-count-badge]');
-    var initialCount = badge ? (parseInt(badge.textContent, 10) || 0) : 0;
-    if (initialCount > 0) {
-      var floatingBtn   = document.getElementById('floating-cart-btn');
-      var floatingCount = floatingBtn && floatingBtn.querySelector('[data-floating-cart-count]');
-      if (floatingBtn) {
-        floatingBtn.hidden = false;
-        if (floatingCount) floatingCount.textContent = initialCount;
-        requestAnimationFrame(function () {
-          floatingBtn.style.transform = 'scale(1)';
-          floatingBtn.style.opacity   = '1';
-        });
-      }
-    }
+    fetch('/cart/drawer', {
+      headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+      credentials: 'same-origin',
+    })
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (data) {
+      if (!data) return;
+      document.dispatchEvent(new CustomEvent('cart:sync', {
+        detail: { html: data.html, count: data.cartCount },
+      }));
+    })
+    .catch(function () {});
   })();
 
   /* ------------------------------------------------------------------------

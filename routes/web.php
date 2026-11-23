@@ -262,6 +262,9 @@ Route::post('/panel/set-password', [PanelPasswordSetupController::class, 'store'
 |--------------------------------------------------------------------------
 */
 
+Route::get('/cart/drawer', [CartController::class, 'drawer'])
+    ->name('cart.drawer');
+
 Route::get('/cart', [CartController::class, 'index'])
     ->name('cart.index');
 

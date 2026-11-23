@@ -32,7 +32,7 @@ class RewardSubmission extends Model implements HasMedia
         $this->addMediaConversion('thumb')
             ->performOnCollections('image')
             ->width(400)
-            ->format('png')
+            ->format('webp')
             ->quality(78);
     }
 

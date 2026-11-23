@@ -220,6 +220,31 @@ class CartController extends Controller
 
     // Same cache keys as SiteDataComposer — this partial is rendered
     // standalone here (fetch responses), bypassing the layout's composer.
+    public function drawer(Request $request): JsonResponse
+    {
+        $cart = Cart::with('coupon')->where('session_id', $request->session()->getId())->first();
+        $items = $cart ? $cart->items()->with(['product.media', 'variant'])->get() : collect();
+        $subtotal = $items->sum(fn (CartItem $item) => $item->unitPrice() * $item->quantity);
+        $itemCount = (int) $items->sum('quantity');
+        $discount = 0.0;
+        if ($cart?->coupon) {
+            $result = $cart->coupon->isValidFor($cart);
+            $discount = $result['valid'] ? $result['discount'] : 0.0;
+        }
+
+        return response()->json([
+            'cartCount' => $itemCount,
+            'html' => view('partials.cart-drawer-items', [
+                'items' => $items,
+                'subtotal' => $subtotal,
+                'discount' => $discount,
+                'couponCode' => $cart?->coupon?->code,
+                'freeShippingThreshold' => $this->shipping->freeShippingThreshold(),
+                'shipping' => $this->shipping->quote($subtotal, $itemCount),
+            ])->render(),
+        ]);
+    }
+
     private function cachedActiveOffers(): array
     {
         return Cache::remember(

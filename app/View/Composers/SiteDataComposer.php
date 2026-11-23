@@ -2,7 +2,6 @@
 
 namespace App\View\Composers;
 
-use App\Models\Cart;
 use App\Models\Category;
 use App\Models\Collection as CollectionModel;
 use App\Models\Coupon;
@@ -20,29 +19,16 @@ class SiteDataComposer
 
     public function compose(View $view): void
     {
-        $cart = Cart::with('coupon')->where('session_id', session()->getId())->first();
-        $cartItems = $cart ? $cart->items()->with(['product.media', 'variant'])->get() : collect();
-
-        $cartDiscount = 0.0;
-        if ($cart?->coupon) {
-            $result = $cart->coupon->isValidFor($cart);
-            $cartDiscount = $result['valid'] ? $result['discount'] : 0.0;
-        }
-
-        $view->with('cartCount', (int) $cartItems->sum('quantity'));
-        $view->with('cartItems', $cartItems);
-        $view->with('cartSubtotal', $cartItems->sum(fn ($item) => $item->unitPrice() * $item->quantity));
-        $view->with('cartDiscount', $cartDiscount);
-        $view->with('cartCouponCode', $cart?->coupon?->code);
+        // Cart data loads via AJAX (GET /cart/drawer) to avoid blocking
+        // page render on the remote DB round-trip. These empty defaults
+        // render the "Your bag is empty" state until JS replaces them.
+        $view->with('cartCount', 0);
+        $view->with('cartItems', collect());
+        $view->with('cartSubtotal', 0);
+        $view->with('cartDiscount', 0);
+        $view->with('cartCouponCode', null);
         $view->with('cartFreeShippingThreshold', $this->shipping->freeShippingThreshold());
-
-        // No postal code known this early (the drawer shows on every page,
-        // long before checkout asks for an address) — same flat-rate/estimated
-        // quote the full /cart page falls back to before an address is given.
-        $view->with('cartShipping', $this->shipping->quote(
-            $cartItems->sum(fn ($item) => $item->unitPrice() * $item->quantity),
-            (int) $cartItems->sum('quantity')
-        ));
+        $view->with('cartShipping', $this->shipping->quote(0, 0));
 
         // Laravel's database/file cache stores refuse to unserialize objects by default
         // (config('cache.serializable_classes') === false) — cache plain arrays, not

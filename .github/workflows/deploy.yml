@@ -1,0 +1,38 @@
+name: Deploy to Hostinger
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy via rsync over SSH
+        uses: burnett01/rsync-deployments@7.0.1
+        with:
+          switches: -avz --delete --exclude='.env' --exclude='vendor/' --exclude='node_modules/' --exclude='storage/logs/' --exclude='storage/framework/cache/data/' --exclude='storage/framework/sessions/' --exclude='storage/framework/views/' --exclude='error_log' --exclude='.git/'
+          path: ./
+          remote_path: ~/domains/shreyasproducts.com/public_html/estele/estele-jewellery/
+          remote_host: ${{ secrets.SSH_HOST }}
+          remote_port: ${{ secrets.SSH_PORT }}
+          remote_user: ${{ secrets.SSH_USER }}
+          remote_key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Post-deploy commands
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          port: ${{ secrets.SSH_PORT }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd ~/domains/shreyasproducts.com/public_html/estele/estele-jewellery
+            /opt/alt/php84/usr/bin/php artisan optimize:clear
+            /opt/alt/php84/usr/bin/php artisan optimize
+            /opt/alt/php84/usr/bin/php artisan view:cache
+            /opt/alt/php84/usr/bin/php artisan event:cache

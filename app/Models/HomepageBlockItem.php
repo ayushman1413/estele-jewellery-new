@@ -23,12 +23,12 @@ class HomepageBlockItem extends Model implements HasMedia
 
     public function registerMediaConversions(?Media $media = null): void
     {
-        $this->addMediaConversion('card')->width(768)->format('png')->quality(80);
-        $this->addMediaConversion('banner')->width(1600)->format('png')->quality(83);
+        $this->addMediaConversion('card')->width(768)->format('webp')->quality(80);
+        $this->addMediaConversion('banner')->width(1600)->format('webp')->quality(83);
         // USP rows render this at 36-40px. Originals live on the private
         // 'original_images' disk and are never servable, so the icon needs a
         // conversion of its own rather than borrowing the 768px 'card'.
-        $this->addMediaConversion('icon')->width(120)->format('png')->quality(85);
+        $this->addMediaConversion('icon')->width(120)->format('webp')->quality(85);
     }
 
     protected $fillable = [
