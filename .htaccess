@@ -1,5 +1,3 @@
-SetHandler application/x-lsphp85
-
 <IfModule mod_rewrite.c>
     RewriteEngine On
 

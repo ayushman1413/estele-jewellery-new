@@ -11,7 +11,7 @@ class CategoryController extends Controller
 {
     public function index()
     {
-        $categories = Cache::tags(['home'])->remember('categories.index', now()->addHour(), function () {
+        $categories = Cache::tags(['home'])->remember('categories.index', now()->addHours(3), function () {
             return Category::orderBy('sort_order')->get();
         });
 

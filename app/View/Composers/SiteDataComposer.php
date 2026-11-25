@@ -35,25 +35,25 @@ class SiteDataComposer
         // Eloquent models/Collections, to avoid silently getting __PHP_Incomplete_Class back.
         $view->with('navCategories', Cache::remember(
             'site.nav_categories',
-            3600,
+            21600,
             fn () => Category::orderBy('sort_order')->get(['id', 'name', 'slug'])->toArray()
         ));
 
         $view->with('navCollections', Cache::remember(
             'site.nav_collections',
-            3600,
+            21600,
             fn () => CollectionModel::active()->ordered()->get(['id', 'name', 'slug'])->toArray()
         ));
 
         $view->with('siteSettings', Cache::remember(
             'site.settings',
-            3600,
+            21600,
             fn () => Setting::pluck('value', 'key')->toArray()
         ));
 
         $view->with('activeOffers', Cache::remember(
             'site.active_offers',
-            3600,
+            21600,
             fn () => Offer::active()->ordered()->get(['text'])->pluck('text')->toArray()
         ));
 

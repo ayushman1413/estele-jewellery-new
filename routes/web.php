@@ -235,15 +235,19 @@ Route::post('/newsletter/subscribe', [NewsletterController::class, 'store'])
 */
 
 Route::get('/blogs', [BlogController::class, 'index'])
+    ->middleware('page.cache')
     ->name('blogs.index');
 
 Route::get('/blogs/{blog:slug}', [BlogController::class, 'show'])
+    ->middleware('page.cache')
     ->name('blogs.show');
 
 Route::get('/faq', [FaqController::class, 'index'])
+    ->middleware('page.cache')
     ->name('faq.index');
 
 Route::get('/pages/{cmsPage:slug}', [CmsPageController::class, 'show'])
+    ->middleware('page.cache')
     ->name('pages.show');
 
 /*

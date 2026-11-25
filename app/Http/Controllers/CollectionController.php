@@ -4,12 +4,15 @@ namespace App\Http\Controllers;
 
 use App\Models\Collection;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 
 class CollectionController extends Controller
 {
     public function index()
     {
-        $collections = Collection::active()->ordered()->with('media')->get();
+        $collections = Cache::tags(['collections'])->remember('collections.index', now()->addHours(3), function () {
+            return Collection::active()->ordered()->with('media')->get();
+        });
 
         return view('collections.index', compact('collections'));
     }
@@ -22,39 +25,46 @@ class CollectionController extends Controller
         $minPrice = $request->query('min_price');
         $maxPrice = $request->query('max_price');
         $inStock = $request->boolean('in_stock');
+        $page = $request->query('page', 1);
 
-        $query = $collection->products()
-            ->with('media')
-            ->withCount('approvedReviews')
-            ->withAvg('approvedReviews', 'rating')
-            ->where('is_active', true);
+        $cacheKey = 'collection.'.$collection->id.'.products.'.md5(json_encode([
+            $sort, $minPrice, $maxPrice, $inStock, $page,
+        ]));
 
-        if ($minPrice !== null && $minPrice !== '') {
-            $query->where('price', '>=', (float) $minPrice);
-        }
-        if ($maxPrice !== null && $maxPrice !== '') {
-            $query->where('price', '<=', (float) $maxPrice);
-        }
-        if ($inStock) {
-            // Same in_stock resolution as CategoryController: variant stock
-            // takes over once a product has variants.
-            $query->where(function ($q) {
-                $q->where(function ($plain) {
-                    $plain->doesntHave('variants')->where('stock_quantity', '>', 0);
-                })->orWhereHas('variants', fn ($v) => $v->where('stock_quantity', '>', 0));
-            });
-        }
+        $products = Cache::tags(['collection:'.$collection->id])->remember(
+            $cacheKey,
+            now()->addMinutes(15),
+            function () use ($collection, $sort, $minPrice, $maxPrice, $inStock) {
+                $query = $collection->products()
+                    ->with('media')
+                    ->withCount('approvedReviews')
+                    ->withAvg('approvedReviews', 'rating')
+                    ->where('is_active', true);
 
-        match ($sort) {
-            'price_asc' => $query->orderBy('price'),
-            'price_desc' => $query->orderBy('price', 'desc'),
-            'newest' => $query->latest('products.created_at'),
-            // 'featured' is the default sort and the storefront offers it by name,
-            // but it used to be indistinguishable from insertion order.
-            default => $query->orderByDesc('products.is_featured')->orderBy('products.id'),
-        };
+                if ($minPrice !== null && $minPrice !== '') {
+                    $query->where('price', '>=', (float) $minPrice);
+                }
+                if ($maxPrice !== null && $maxPrice !== '') {
+                    $query->where('price', '<=', (float) $maxPrice);
+                }
+                if ($inStock) {
+                    $query->where(function ($q) {
+                        $q->where(function ($plain) {
+                            $plain->doesntHave('variants')->where('stock_quantity', '>', 0);
+                        })->orWhereHas('variants', fn ($v) => $v->where('stock_quantity', '>', 0));
+                    });
+                }
 
-        $products = $query->paginate(24)->withQueryString();
+                match ($sort) {
+                    'price_asc' => $query->orderBy('price'),
+                    'price_desc' => $query->orderBy('price', 'desc'),
+                    'newest' => $query->latest('products.created_at'),
+                    default => $query->orderByDesc('products.is_featured')->orderBy('products.id'),
+                };
+
+                return $query->paginate(24)->withQueryString();
+            }
+        );
 
         return view('collections.show', compact(
             'collection', 'products', 'sort', 'minPrice', 'maxPrice', 'inStock'
