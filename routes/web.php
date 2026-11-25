@@ -57,21 +57,27 @@ Route::get('/robots.txt', function () {
 })->name('robots');
 
 Route::get('/', [HomeController::class, 'index'])
+    ->middleware('page.cache')
     ->name('home');
 
 Route::get('/categories', [CategoryController::class, 'index'])
+    ->middleware('page.cache')
     ->name('categories.index');
 
 Route::get('/categories/{category:slug}', [CategoryController::class, 'show'])
+    ->middleware('page.cache')
     ->name('categories.show');
 
 Route::get('/collections', [CollectionController::class, 'index'])
+    ->middleware('page.cache')
     ->name('collections.index');
 
 Route::get('/collections/{collection:slug}', [CollectionController::class, 'show'])
+    ->middleware('page.cache')
     ->name('collections.show');
 
 Route::get('/products/{product:slug}', [ProductController::class, 'show'])
+    ->middleware('page.cache')
     ->name('products.show');
 
 Route::post('/products/{product:slug}/reviews', [ReviewController::class, 'store'])

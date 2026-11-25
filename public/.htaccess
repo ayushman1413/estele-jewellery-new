@@ -5,6 +5,10 @@
 
     RewriteEngine On
 
+    # Block common bot/scanner paths before they reach PHP — each hit
+    # otherwise creates a MySQL connection for the redirect lookup.
+    RewriteRule ^(wp-login|wp-admin|wp-content|wp-includes|xmlrpc|wordpress|\.env|\.git|phpmyadmin|admin\.php|cgi-bin) - [R=404,L]
+
     # Handle Authorization Header
     RewriteCond %{HTTP:Authorization} .
     RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]

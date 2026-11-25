@@ -15,7 +15,7 @@ class HomeController extends Controller
 {
     public function index()
     {
-        $data = Cache::tags(['home'])->remember('home.page', now()->addHour(), function () {
+        $data = Cache::tags(['home'])->remember('home.page', now()->addHours(6), function () {
             $data = [
                 'categories' => Category::orderBy('sort_order')->with('media')->get(),
                 // A banner row with no image file still rendered as an empty

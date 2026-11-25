@@ -1,6 +1,7 @@
 <?php
 
 use App\Console\Commands\SiteCheck;
+use App\Http\Middleware\PageCache;
 use App\Http\Middleware\SecurityHeaders;
 use App\Http\Middleware\ThrottleRequestsPerRoute;
 use App\Http\Middleware\VendorTokenAuth;
@@ -19,6 +20,7 @@ use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Database\QueryException;
 use Illuminate\Validation\ValidationException;
 use Sentry\Laravel\Integration;
 use Symfony\Component\HttpFoundation\Request as SymfonyRequest;
@@ -121,8 +123,8 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'vendor.token' => VendorTokenAuth::class,
             'fastrr' => VerifyFastrrRequest::class,
-            // Each throttled route gets its own counter (see the class).
             'throttle' => ThrottleRequestsPerRoute::class,
+            'page.cache' => PageCache::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
@@ -158,15 +160,36 @@ return Application::configure(basePath: dirname(__DIR__))
                 return null;
             }
 
-            $redirect = Redirect::where('old_path', Redirect::normalizePath($request->path()))
-                ->where('is_active', true)
-                ->first();
+            $normalizedPath = Redirect::normalizePath($request->path());
+            $cacheKey = 'redirect:' . md5($normalizedPath);
+
+            try {
+                $redirect = Cache::remember($cacheKey, now()->addDay(), function () use ($normalizedPath) {
+                    return Redirect::where('old_path', $normalizedPath)
+                        ->where('is_active', true)
+                        ->first();
+                });
+            } catch (\Throwable) {
+                return null;
+            }
 
             return $redirect ? redirect($redirect->new_path, $redirect->status_code) : null;
         };
 
         $exceptions->render(fn (NotFoundHttpException $e, Request $request) => $redirectCheck($e, $request));
         $exceptions->render(fn (ModelNotFoundException $e, Request $request) => $redirectCheck($e, $request));
+
+        $exceptions->render(function (QueryException $e) {
+            if (str_contains($e->getMessage(), 'max_connections_per_hour')
+                || str_contains($e->getMessage(), 'Too many connections')
+            ) {
+                return response(file_get_contents(public_path('maintenance.html')), 503)
+                    ->header('Content-Type', 'text/html')
+                    ->header('Retry-After', '300');
+            }
+
+            return null;
+        });
 
         // Phase 7 monitoring (spec §10 "error tracking from day one") — reports
         // uncaught exceptions to Sentry. Genuinely no-op with no config change:
